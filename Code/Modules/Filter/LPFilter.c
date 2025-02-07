@@ -59,6 +59,8 @@ int main() {
         uint16_t pwm_value = (uint16_t)(filtered_signal * 255); // Scale to 8-bit resolution
         pwm_set_chan_level(slice_num, channel, pwm_value);
 
+
+        //Modify This section to fill frame buffer
         // Sleep to maintain the sample rate
         sleep_us(1000000 / SAMPLE_RATE);
     }
