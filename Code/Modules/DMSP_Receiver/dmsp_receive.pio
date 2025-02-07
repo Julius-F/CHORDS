@@ -1,0 +1,25 @@
+; dmsp_receive.pio - PIO Assembly for DMSP Reception
+
+.program dmsp_receive
+
+.wrap_target
+start:
+    wait 1 pin 16         ; Wait for rising edge of Global Clock (sync)
+    wait 1 pin 17         ; Wait for Channel Control signal high (frame start)
+    in pins, 32           ; Read 32-bit frame from DMSP_IN_PIN into ISR
+    push noblock          ; Push received data into RX FIFO (non-blocking)
+.wrap
+
+% c-sdk {
+// Initializes the PIO state machine for DMSP reception
+void dmsp_receive_program_init(PIO pio, uint sm, uint offset, uint in_pin) {
+   pio_gpio_init(pio, in_pin);
+   pio_sm_set_consecutive_pindirs(pio, sm, in_pin, 1, false); // Set as input
+
+   pio_sm_config c = dmsp_receive_program_get_default_config(offset);
+   sm_config_set_in_pins(&c, in_pin);
+   sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX); // RX FIFO only
+
+   pio_sm_init(pio, sm, offset, &c);
+}
+%}
