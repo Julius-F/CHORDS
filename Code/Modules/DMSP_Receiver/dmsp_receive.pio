@@ -1,25 +1,36 @@
-; dmsp_receive.pio - PIO Assembly for DMSP Reception
-
 .program dmsp_receive
 
+; Define GPIO pins
+.define GLOBAL_CLK_PIN 14  ; GPIO 14 as global clock input
+.define CHANNEL_CTRL_PIN 15 ; GPIO 15 as sync signal input
+.define DMSP_IN_PIN 16     ; GPIO 16 as input for DMSP data
+
+; Main loop
 .wrap_target
-start:
-    wait 1 pin 16         ; Wait for rising edge of Global Clock (sync)
-    wait 1 pin 17         ; Wait for Channel Control signal high (frame start)
-    in pins, 32           ; Read 32-bit frame from DMSP_IN_PIN into ISR
-    push noblock          ; Push received data into RX FIFO (non-blocking)
+    ; Wait for sync signal to go high (start of a new frame)
+    wait 1 GPIO, CHANNEL_CTRL_PIN  ; Wait for GPIO 15 (sync) to go high
+
+    ; Wait for sync signal to go low
+    wait 0 GPIO, CHANNEL_CTRL_PIN  ; Wait for GPIO 15 (sync) to go low
+
+    wait 1 GPIO, GLOBAL_CLK_PIN
+    
+    ; Initialize loop counter (32 bits)
+    set x, 31
+
+bitloop:
+    ; Wait for the falling edge of the global clock
+    wait 0 GPIO, GLOBAL_CLK_PIN ; Wait for GPIO 14 (global clock) to go low
+
+    ; Read 1 bit from GPIO 16
+    in pins, 1                  ; Shift in 1 bit from GPIO 16
+
+    ; Wait for the rising edge of the global clock (optional, for clean timing)
+    wait 1 GPIO, GLOBAL_CLK_PIN ; Wait for GPIO 14 (global clock) to go high
+
+    ; Decrement x and loop until all 32 bits are received
+    jmp x-- bitloop             ; Decrement x and loop until all 32 bits are received
+
+    ; Push the received data to the RX FIFO
+    push                        ; Push the received data to the RX FIFO
 .wrap
-
-% c-sdk {
-// Initializes the PIO state machine for DMSP reception
-void dmsp_receive_program_init(PIO pio, uint sm, uint offset, uint in_pin) {
-   pio_gpio_init(pio, in_pin);
-   pio_sm_set_consecutive_pindirs(pio, sm, in_pin, 1, false); // Set as input
-
-   pio_sm_config c = dmsp_receive_program_get_default_config(offset);
-   sm_config_set_in_pins(&c, in_pin);
-   sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX); // RX FIFO only
-
-   pio_sm_init(pio, sm, offset, &c);
-}
-%}
