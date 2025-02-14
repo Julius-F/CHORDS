@@ -21,7 +21,7 @@ int main() {
     pio_gpio_init(pio, 1);             // Initialize GPIO 1
 
     // Set the clock divider for 1.28 MHz
-    float div = clock_get_hz(clk_sys) / (1.28e6 * 66);  // 1.28 MHz clock
+    float div = clock_get_hz(clk_sys) / (1.28e6 * 67);  // 1.28 MHz clock
     sm_config_set_clkdiv(&c, div);
 
     // Initialize the state machine
