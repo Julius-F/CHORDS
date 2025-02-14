@@ -1,0 +1,35 @@
+.program i2s_receive_24bit
+
+; Define GPIO pins for I2S reception
+.define BCLK_PIN 14         ; GPIO 14 - Bit Clock (2.1168 MHz for 24-bit stereo @ 44.1kHz)
+.define LRCLK_PIN 15        ; GPIO 15 - Word Clock (44.1 kHz, left/right channel select)
+.define I2S_IN_PIN 16       ; GPIO 16 - Serial Data Input (I2S data)
+
+; Main loop
+.wrap_target
+    ; Wait for LRCLK to go high (Start of Left Channel)
+    wait 1 GPIO, LRCLK_PIN  
+    wait 0 GPIO, LRCLK_PIN  ; Wait for it to go low (start capturing data)
+
+    ; Align with bit clock
+    wait 1 GPIO, BCLK_PIN  
+
+    ; Initialize loop counter for 24 bits
+    set x, 23
+
+bitloop:
+    ; Wait for falling edge of BCLK
+    wait 0 GPIO, BCLK_PIN 
+
+    ; Read 1 bit from GPIO 16
+    in pins, 1                ; Shift in 1 bit from GPIO 16
+
+    ; Wait for rising edge of BCLK
+    wait 1 GPIO, BCLK_PIN 
+
+    ; Decrement x and loop until all 24 bits are received
+    jmp x-- bitloop            
+
+    ; Push the received 24-bit data to the RX FIFO
+    push                        
+.wrap
