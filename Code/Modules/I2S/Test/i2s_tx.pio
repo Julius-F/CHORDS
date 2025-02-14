@@ -1,0 +1,59 @@
+; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.
+;
+; SPDX-License-Identifier: BSD-3-Clause
+;
+
+; SET pin 0 should be mapped to your I2S data GPIO
+; SET pin 1 should be mapped to your I2S clock (BCLK) GPIO
+; SET pin 2 should be mapped to your I2S word select (LRCLK) GPIO
+
+; i2s_tx.pio
+; PIO program to send I2S data
+
+.program i2s_tx
+    pull block          ; Wait for data to be available in the TX FIFO
+    out y, 32           ; Load the data into y register (32-bit audio sample)
+.wrap_target
+    set pins, 0b100     ; Set LRCLK high (left channel)
+    mov x, !null        ; Initialize x to 31 (prepare to send 32 bits)
+    set x, 31           ; Set x to 31 (32 bits to send)
+i2s_loop_left:
+    out pins, 1         ; Output one bit of the audio sample to the data pin
+    set pins, 0b010     ; Toggle BCLK (clock)
+    jmp x-- i2s_loop_left ; Repeat for all 32 bits
+
+    set pins, 0b000     ; Set LRCLK low (right channel)
+    mov x, !null        ; Initialize x to 31 (prepare to send 32 bits)
+    set x, 31           ; Set x to 31 (32 bits to send)
+i2s_loop_right:
+    out pins, 1         ; Output one bit of the audio sample to the data pin
+    set pins, 0b010     ; Toggle BCLK (clock)
+    jmp x-- i2s_loop_right ; Repeat for all 32 bits
+.wrap                   ; Repeat forever
+
+% c-sdk {
+// this is a raw helper function for use by the user which sets up the GPIO output, and configures the SM to output on a particular pin
+
+void i2s_tx_program_init(PIO pio, uint sm, uint offset, uint data_pin, uint bclk_pin, uint lrclk_pin) {
+    // Initialize the GPIO pins
+    pio_gpio_init(pio, data_pin);
+    pio_gpio_init(pio, bclk_pin);
+    pio_gpio_init(pio, lrclk_pin);
+
+    // Set the pin directions
+    pio_sm_set_consecutive_pindirs(pio, sm, data_pin, 1, true);
+    pio_sm_set_consecutive_pindirs(pio, sm, bclk_pin, 1, true);
+    pio_sm_set_consecutive_pindirs(pio, sm, lrclk_pin, 1, true);
+
+    // Get the default config for the program
+    pio_sm_config c = i2s_tx_program_get_default_config(offset);
+
+    // Set the set pins for the program
+    sm_config_set_set_pins(&c, data_pin, 1);
+    sm_config_set_set_pins(&c, bclk_pin, 1);
+    sm_config_set_set_pins(&c, lrclk_pin, 1);
+
+    // Initialize the state machine
+    pio_sm_init(pio, sm, offset, &c);
+}
+%}
