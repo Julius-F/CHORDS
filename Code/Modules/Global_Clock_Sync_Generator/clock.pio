@@ -1,0 +1,31 @@
+;clock.pio
+.program clock
+; GPIO 0: Clock signal
+; GPIO 1: Sync signal
+
+; Set GPIO 0 and GPIO 1 as outputs
+set pindirs, 0b11
+
+; Initialize X as a counter for sync signal
+set x, 31  ; Count down from 31 to 0 (32 cycles)
+
+; Main loop
+.wrap_target
+    ; Toggle clock signal (GPIO 0)
+    set pins, 1 [31]  ; Set clock high, delay 31 cycles
+    set pins, 0 [31]  ; Set clock low, delay 31 cycles
+
+    ; Decrement X counter and check if X == 0
+    jmp x-- nosync    ; If X != 0, skip sync signal
+
+    ; Sync signal (GPIO 1) high for 31 cycles (duration of one GPIO 0 clock cycle)
+    set pins, 0b10    ; Set sync high (GPIO 1), clock low (GPIO 0)
+    nop [30]          ; Delay for 30 cycles (total 31 cycles for sync)
+    set pins, 0b00    ; Set sync low (GPIO 1), clock low (GPIO 0)
+
+    ; Reset X counter
+    set x, 31         ; Reset X to 31 for next sync cycle
+
+nosync:
+    nop               ; Placeholder instruction
+.wrap
