@@ -28,38 +28,38 @@ set(PICO_BOARD pico2 CACHE STRING "Board type")
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(receiver C CXX ASM)
+project(dmsp_receiver C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(receiver receiver.c )
+add_executable(dmsp_receiver dmsp_receiver.c )
 
-pico_set_program_name(receiver "dmsp_receiver")
-pico_set_program_version(receiver "0.1")
+pico_set_program_name(dmsp_receiver "dmsp_receiver")
+pico_set_program_version(dmsp_receiver "0.1")
 
 # Generate PIO header
-pico_generate_pio_header(receiver ${CMAKE_CURRENT_LIST_DIR}/dmsp_receive.pio)
+pico_generate_pio_header(dmsp_receiver ${CMAKE_CURRENT_LIST_DIR}/dmsp_receive.pio)
 
 # Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(receiver 0)
-pico_enable_stdio_usb(receiver 1)
+pico_enable_stdio_uart(dmsp_receiver 0)
+pico_enable_stdio_usb(dmsp_receiver 1)
 
 # Add the standard library to the build
-target_link_libraries(receiver
+target_link_libraries(dmsp_receiver
         pico_stdlib)
 
 # Add the standard include files to the build
-target_include_directories(receiver PRIVATE
+target_include_directories(dmsp_receiver PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
 )
 
 # Add any user requested libraries
-target_link_libraries(receiver 
-        hardware_dma
+target_link_libraries(dmsp_receiver 
         hardware_pio
         )
 
-pico_add_extra_outputs(receiver)
+pico_add_extra_outputs(dmsp_receiver)
+
