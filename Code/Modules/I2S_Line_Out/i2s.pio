@@ -1,0 +1,31 @@
+.program i2s
+.side_set 1 opt  ; 1-bit sideset for BCLK
+
+; Define GPIO pins
+.define BCLK_PIN 10  ; Bit clock output
+.define DOUT_PIN 12  ; Data output
+.define SYNC_PIN 15  ; Sync signal input
+
+.wrap_target
+    ; Pull 24-bit audio data from TX FIFO
+    pull side 0b0  
+
+    ; Prepare loop for 24-bit transmission
+    set x, 23 side 0b0  
+    
+    ; Wait for the sync signal to go high (new frame start)
+    wait 1 GPIO, SYNC_PIN side 0b0  
+
+bitloop:
+    ; Shift out 1 bit while raising BCLK
+    out pins, 1 side 0b1  [7]; Output 1 bit to DOUT_PIN and raise BCLK
+    nop [7]               ; Delay for 50% duty cycle
+
+    ; Lower BCLK (50% duty cycle)
+    nop [7] side 0b0      ; Lower BCLK
+    nop [7]               ; Delay for 50% duty cycle
+
+    ; Decrement x and loop for 24 bits
+    jmp x-- bitloop  
+
+.wrap
