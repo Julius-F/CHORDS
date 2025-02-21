@@ -1,3 +1,12 @@
+/*
+ * File: CHORDS_VCA.c
+ * Author: CHORDS Group
+ * Date: February 20, 2025
+ * Description:    This program is designed to attenuated the input frequancy signal from the previous module. 
+ *                 The frequancy data will be sent to a potentiometer to decrease the ampltide of the signal.
+ * Version: 1.0
+ */
+
 #include "pico/stdlib.h"
 #include "hardware/adc.h"
 #include <stdio.h>
