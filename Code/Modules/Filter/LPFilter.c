@@ -1,3 +1,12 @@
+/*
+ * File: LPFilter.c
+ * Author: CHORDS Group
+ * Date: February 20, 2025
+ * Description:    This program is designed to take frequancy data sent from the previous module and apply a low pass filter onto. 
+*                  This filter will be sent to a potentiometer that will be able to adjust the frequancy of the filter form 20kHz to 0Hz.
+ * Version: 1.0
+ */
+
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/adc.h"
