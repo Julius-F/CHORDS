@@ -1,5 +1,5 @@
 /*
- * File: dmps_receiver.c
+ * File: dmps_transmitter.c
  * Author: CHORDS Group
  * Date: February 20, 2025
  * Description:    This code will transmites the data being sent between each module. This code utilizes state machines to generate the signal.
