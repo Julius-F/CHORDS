@@ -59,6 +59,7 @@ target_include_directories(dmsp_receiver PRIVATE
 # Add any user requested libraries
 target_link_libraries(dmsp_receiver 
         hardware_pio
+        hardware_dma
         )
 
 pico_add_extra_outputs(dmsp_receiver)
