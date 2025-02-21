@@ -6,7 +6,6 @@
  * Version: 1.0
  */
 
-
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
 #include "hardware/clocks.h"
