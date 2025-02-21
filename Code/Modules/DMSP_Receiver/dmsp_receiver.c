@@ -2,8 +2,8 @@
  * File: dmps_receiver.c
  * Author: CHORDS Group
  * Date: February 20, 2025
- * Description:    This code will receive the data being sent between each module. This code utilizes state machines to generate the signal.
- * Version: 1.0
+ * Description:    This code will receive the data being sent between each module.
+ * Version: 1.1
  */
 
 #include <stdio.h>
