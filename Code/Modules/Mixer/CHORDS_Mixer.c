@@ -1,3 +1,11 @@
+/*
+ * File: CHORDS_Mixer.c
+ * Author: CHORDS Group
+ * Date: February 20, 2025
+ * Description:    This program is designed to mix the four voices of the synthesizer together, allowing for clean signal to be created between each voices.
+ * Version: 1.0
+ */
+
 #include "pico/stdlib.h"
 #include <stdio.h>
 
