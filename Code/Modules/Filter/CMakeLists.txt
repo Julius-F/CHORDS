@@ -28,47 +28,41 @@ set(PICO_BOARD pico2 CACHE STRING "Board type")
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(LPFilter C CXX ASM)
+project(vca C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(LPFilter LPFilter.c )
+add_executable(vca vca.c )
 
-pico_set_program_name(LPFilter "LPFilter")
-pico_set_program_version(LPFilter "0.1")
+pico_set_program_name(vca "vca")
+pico_set_program_version(vca "0.1")
 
 # Generate PIO header
-pico_generate_pio_header(LPFilter ${CMAKE_CURRENT_LIST_DIR}/blink.pio)
+pico_generate_pio_header(vca ${CMAKE_CURRENT_LIST_DIR}/dmsp_transmit.pio)
+pico_generate_pio_header(vca ${CMAKE_CURRENT_LIST_DIR}/dmsp_receive.pio)
 
 # Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(LPFilter 0)
-pico_enable_stdio_usb(LPFilter 0)
+pico_enable_stdio_uart(vca 0)
+pico_enable_stdio_usb(vca 1)
 
 # Add the standard library to the build
-target_link_libraries(LPFilter
+target_link_libraries(vca
         pico_stdlib)
 
 # Add the standard include files to the build
-target_include_directories(LPFilter PRIVATE
+target_include_directories(vca PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
 )
 
 # Add any user requested libraries
-target_link_libraries(LPFilter 
-        hardware_spi
-        hardware_i2c
+target_link_libraries(vca 
         hardware_dma
         hardware_pio
-        hardware_interp
-        hardware_timer
-        hardware_watchdog
-        hardware_clocks
-        hardware_pwm
         hardware_adc
         )
 
-pico_add_extra_outputs(LPFilter)
+pico_add_extra_outputs(vca)
 
