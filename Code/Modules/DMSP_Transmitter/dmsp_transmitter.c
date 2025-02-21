@@ -1,3 +1,11 @@
+/*
+ * File: dmps_receiver.c
+ * Author: CHORDS Group
+ * Date: February 20, 2025
+ * Description:    This code will transmites the data being sent between each module. This code utilizes state machines to generate the signal.
+ * Version: 1.0
+ */
+
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
