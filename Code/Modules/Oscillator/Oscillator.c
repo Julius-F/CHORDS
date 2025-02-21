@@ -1,3 +1,14 @@
+/*
+ * File: Oscillator.c
+ * Author: CHORDS Group
+ * Date: February 20, 2025
+ * Description:    This code creates multiple waveformss; Sine, Sawtooth, Square, Triangle, and Noise, using the table lookup meathod. These waves will be tune to the note A at 440Hz. 
+ *                 This program will receive input from a MiDi controller that will input frequancy data. Then send the data to the next module in the chain.
+ * Version: 1.0
+ */
+
+
+
 #include "pico/stdlib.h"
 #include "hardware/pwm.h"
 #include <math.h>
