@@ -1,3 +1,11 @@
+/*
+ * File: i2s_line_out.c
+ * Author: CHORDS Group
+ * Date: February 20, 2025
+ * Description:    This program takes the final signal and converts it to and audio output signal. This code utilizes state machines to generate the signal.
+ * Version: 1.0
+ */
+
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
