@@ -1,4 +1,12 @@
-//global_bus_test.c
+/*
+ * File: global_bus_test.c
+ * Author: CHORDS Group
+ * Date: February 20, 2025
+ * Description:    This code generates a clock signal to syncronize the data being sent between each module. This code utilizes state machines to generate the signal.
+ * Version: 1.0
+ */
+
+
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
 #include "hardware/clocks.h"
