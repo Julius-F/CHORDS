@@ -11,7 +11,7 @@
 #define DMSP_OUT_PIN 16
 
 // Constants
-#define SAMPLE_RATE 40075
+#define SAMPLE_RATE 40000
 #define WAVETABLE_SIZE 2048
 #define MIDI_NOTE_BITS 7
 #define PITCH_BEND_BITS 17
@@ -26,11 +26,11 @@ static float phase = 0.0f;
 static float phaseIncrement = 0.0f;
 
 // Current MIDI note and pitch bend
-uint8_t current_midi_note = 30;
+uint8_t current_midi_note = 117;
 uint32_t current_pitch_bend = MAX_PITCH_BEND / 2;
 
 // Amplitude control
-float amplitude = 0.7f;
+float amplitude = 0.8f;
 
 // Ring buffer
 uint32_t ring_buffer[RING_BUFFER_SIZE];
@@ -59,6 +59,8 @@ void dmsp_transmitter_init(PIO pio, uint sm, uint offset) {
     pio_sm_set_enabled(pio, sm, true);
 }
 
+/*
+
 // Use a sawtooth from -1.0 to +1.0
 void init_wavetable() {
     for (int i = 0; i < WAVETABLE_SIZE; i++) {
@@ -66,6 +68,16 @@ void init_wavetable() {
         wavetable[i] = (2.0f * i / (float)WAVETABLE_SIZE) - 1.0f;
     }
 }
+
+*/
+
+void init_wavetable() {
+    for (int i = 0; i < WAVETABLE_SIZE; i++) {
+        float phase = (2.0f * M_PI * i) / (float)WAVETABLE_SIZE;
+        wavetable[i] = sinf(phase);
+    }
+}
+
 
 float midi_note_to_frequency(uint8_t midi_note) {
     return 440.0f * powf(2.0f, (float)(midi_note - 69) / 12.0f);
@@ -100,9 +112,40 @@ void fill_ring_buffer() {
     update_frequency(frequency);
 
     while ((ring_buffer_head + 1) % RING_BUFFER_SIZE != ring_buffer_tail) {
-        float sample = generate_sample();
-        int32_t audio_data = (int32_t)(sample * 0x7FFFFF);
-        ring_buffer[ring_buffer_head] = 0xFF000000 | (audio_data & 0xFFFFFF);
+        // Determine the current channel (cycles through 1, 2, 3, 4)
+        uint8_t channel = (ring_buffer_head % 4) + 1;
+
+        // Construct the frame header based on the channel
+        uint8_t header;
+        switch (channel) {
+            case 1:
+                header = 0x8F;  // 1 (flag) + 000 (channel 1) + 1111 (frame type 0xF)
+                break;
+            case 2:
+                header = 0x9F;  // 1 (flag) + 001 (channel 2) + 1111 (frame type 0xF)
+                break;
+            case 3:
+                header = 0xAF;  // 1 (flag) + 010 (channel 3) + 1111 (frame type 0xF)
+                break;
+            case 4:
+                header = 0xBF;  // 1 (flag) + 011 (channel 4) + 1111 (frame type 0xF)
+                break;
+            default:
+                header = 0x8F;  // Default to channel 1 (should not happen)
+                break;
+        }
+
+        // Generate audio data only for channel 1
+        int32_t audio_data = 0x000000;  // Default to no data
+        if (channel == 1) {
+            float sample = generate_sample();
+            audio_data = (int32_t)(sample * 0x7FFFFF);  // Scale to 24-bit signed
+        }
+
+        // Combine the header and audio data into a 32-bit word
+        uint32_t frame = ((uint32_t)header << 24) | (audio_data & 0xFFFFFF);
+
+        ring_buffer[ring_buffer_head] = frame;
         ring_buffer_head = (ring_buffer_head + 1) % RING_BUFFER_SIZE;
     }
 }
@@ -134,7 +177,6 @@ int main() {
     channel_config_set_read_increment(&c, true);
     channel_config_set_write_increment(&c, false);
     channel_config_set_dreq(&c, pio_get_dreq(pio, sm, true));
-    // Removed the chain_to configuration
 
     dma_channel_configure(dma_chan, &c, &pio->txf[sm], &ring_buffer[ring_buffer_tail], RING_BUFFER_SIZE / 2, true);
     dma_channel_set_irq0_enabled(dma_chan, true);
