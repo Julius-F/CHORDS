@@ -2,8 +2,8 @@
  * File: dmps_transmitter.c
  * Author: CHORDS Group
  * Date: February 20, 2025
- * Description:    This code will transmites the data being sent between each module. This code utilizes state machines to generate the signal.
- * Version: 1.0
+ * Description:    This code will transmites the data being sent between each module. This version is modified to transmit test data on channel 1.
+ * Version: 1.1
  */
 
 #include <stdio.h>
@@ -11,14 +11,17 @@
 #include "hardware/pio.h"
 #include "hardware/dma.h"
 #include "dmsp_transmit.pio.h"
+#include <math.h>
 
 // Define GPIO pins
 #define GLOBAL_CLK_PIN 14  // GPIO 14 as global clock input
 #define CHANNEL_CTRL_PIN 15 // GPIO 15 as sync signal input
 #define DMSP_OUT_PIN 16    // GPIO 16 as output for DMSP data
 
-// Number of test frames (0xFA000000 to 0xFA00FFFF)
-#define NUM_TEST_FRAMES 65536
+#define NUM_TEST_FRAMES 80000
+#define SAMPLE_RATE 160000  // 40.584 kHz
+#define FREQUENCY 100     // 440 Hz sine wave (Adjustable)
+#define AMPLITUDE 0x2FFFFF   // Max 24-bit signed value
 
 // Test data array
 uint32_t test_data[NUM_TEST_FRAMES];
@@ -52,10 +55,43 @@ void dmsp_transmitter_init(PIO pio, uint sm, uint offset) {
     pio_sm_set_enabled(pio, sm, true);
 }
 
-// Function to generate test data
 void generate_test_data() {
+    const double freq_root = FREQUENCY;  // Root note frequency
+
     for (int i = 0; i < NUM_TEST_FRAMES; i++) {
-        test_data[i] = 0xFA000000 + i;  // Generate frames from 0xFA000000 to 0xFA00FFFF
+        // Determine the current channel (cycles through 1, 2, 3, 4)
+        uint8_t channel = (i % 4) + 1;  // Channels are 1, 2, 3, 4
+
+        // Construct the frame header based on the channel
+        uint8_t header;
+        switch (channel) {
+            case 1:
+                header = 0x8F;  // 1 (flag) + 000 (channel 1) + 1111 (frame type 0xF)
+                break;
+            case 2:
+                header = 0x9F;  // 1 (flag) + 001 (channel 2) + 1111 (frame type 0xF)
+                break;
+            case 3:
+                header = 0xAF;  // 1 (flag) + 010 (channel 3) + 1111 (frame type 0xF)
+                break;
+            case 4:
+                header = 0xBF;  // 1 (flag) + 011 (channel 4) + 1111 (frame type 0xF)
+                break;
+            default:
+                header = 0x8F;  // Default to channel 1 (should not happen)
+                break;
+        }
+
+        // Generate sine wave data only for channel 1
+        uint32_t audio_data = 0x000000;  // Default to no data
+        if (channel == 1) {
+            double t = (double)i / SAMPLE_RATE;
+            int32_t sample = (int32_t)(AMPLITUDE * sin(2.0 * M_PI * freq_root * t));
+            audio_data = (sample & 0xFFFFFF);  // Keep only the lower 24 bits
+        }
+
+        // Combine the header and audio data into a 32-bit word
+        test_data[i] = ((uint32_t)header << 24) | audio_data;
     }
 }
 
@@ -105,7 +141,7 @@ int main() {
         &c,                    // Configuration
         &pio->txf[sm],         // Write address (PIO TX FIFO)
         test_data,             // Read address (test_data array)
-        NUM_TEST_FRAMES * 2,   // Increased transfer count for testing (doubling)
+        NUM_TEST_FRAMES,   // Increased transfer count for testing (doubling)
         true                   // Start immediately
     );
 
