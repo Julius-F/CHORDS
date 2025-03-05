@@ -12,17 +12,17 @@ set x, 31  ; Count down from 31 to 0 (32 cycles)
 ; Main loop
 .wrap_target
     ; Toggle clock signal (GPIO 0)
-    set pins, 1 [30]  ; Set clock high, delay 30 cycles
-    set pins, 0 [30]  ; Set clock low, delay 30 cycles
+    set pins, 1 [6]  ; Set clock high, delay 30 cycles
+    set pins, 0 [6]  ; Set clock low, delay 30 cycles
 
     ; Decrement X counter and check if X == 0
     jmp x-- nosync    ; If X != 0, skip sync signal
 
     ; Sync signal (GPIO 1) high for 31 cycles (duration of one GPIO 0 clock cycle)
     set pins, 0b10    ; Set sync high (GPIO 1), clock low (GPIO 0)
-    nop [29]          ; Delay for 29 cycles (total 30 cycles for sync)
+    nop [5]          ; Delay for 29 cycles (total 30 cycles for sync)
     set pins, 0b00    ; Set sync low (GPIO 1), clock low (GPIO 0)
-    nop [29]          ; Delay for 29 cycles (total 30 cycles for sync)
+    nop [5]          ; Delay for 29 cycles (total 30 cycles for sync)
 
     ; Reset X counter
     set x, 31         ; Reset X to 31 for next sync cycle
