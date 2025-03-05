@@ -2,8 +2,8 @@
  * File: global_bus_test.c
  * Author: CHORDS Group
  * Date: February 20, 2025
- * Description:    This code generates a clock signal to syncronize the data being sent between each module. This code utilizes state machines to generate the signal.
- * Version: 1.0
+ * Description:    This code generates a clock signal to syncronize the data being sent between each module. Updated to support 4 channels.
+ * Version: 1.1
  */
 
 #include "pico/stdlib.h"
@@ -27,8 +27,10 @@ int main() {
     pio_gpio_init(pio, 0);             // Initialize GPIO 0
     pio_gpio_init(pio, 1);             // Initialize GPIO 1
 
+    //1.28e6 * 67
+
     // Set the clock divider for 1.28 MHz
-    float div = clock_get_hz(clk_sys) / (1.28e6 * 67);  // 1.28 MHz clock
+    float div = clock_get_hz(clk_sys) / (1.28e6 * 66);  // 1.28 MHz clock
     sm_config_set_clkdiv(&c, div);
 
     // Initialize the state machine
