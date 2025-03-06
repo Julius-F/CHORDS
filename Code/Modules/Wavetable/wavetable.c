@@ -71,6 +71,7 @@ void init_wavetable() {
 
 */
 
+Use a sine from -1.0 to +1.0
 void init_wavetable() {
     for (int i = 0; i < WAVETABLE_SIZE; i++) {
         float phase = (2.0f * M_PI * i) / (float)WAVETABLE_SIZE;
