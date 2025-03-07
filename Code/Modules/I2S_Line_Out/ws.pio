@@ -4,15 +4,22 @@
 ; Uses the x scratch register to toggle the WS pin
 
 .define SYNC_PIN 15  ; Sync signal input
+.define I2S_SYNC 22  ; I2S frame sync pin
 
 .wrap_target
     wait 1 GPIO, SYNC_PIN  ; Wait for sync signal to go high
     set pins, 1            ; Set WS_PIN HIGH
+    set GPIO, I2S_SYNC, 1   ; Set I2S_SYNC HIGH
+    nop    [31]             ; Hold I2S_SYNC high for a few cycles
+    set GPIO, I2S_SYNC, 0   ; Set I2S_SYNC LOW
     wait 0 GPIO, SYNC_PIN  ; Wait for sync signal to go low
     wait 1 GPIO, SYNC_PIN  ; Wait for sync signal to go high
     wait 0 GPIO, SYNC_PIN  ; Wait for sync signal to go low
     wait 1 GPIO, SYNC_PIN  ; Wait for sync signal to go high
     set pins, 0            ; Set WS_PIN LOW
+    set GPIO, I2S_SYNC, 1   ; Set I2S_SYNC HIGH
+    nop    [31]             ; Hold I2S_SYNC high for a few cycles
+    set GPIO, I2S_SYNC, 0   ; Set I2S_SYNC LOW
     wait 0 GPIO, SYNC_PIN  ; Wait for sync signal to go low
     wait 1 GPIO, SYNC_PIN  ; Wait for sync signal to go high
     wait 0 GPIO, SYNC_PIN  ; Wait for sync signal to go low
