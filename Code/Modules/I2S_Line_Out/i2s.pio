@@ -5,7 +5,6 @@
 .define BCLK_PIN 10  ; Bit clock output
 .define DOUT_PIN 12  ; Data output
 .define SYNC_PIN 15  ; Sync signal input
-.define I2S_SYNC 22  ; I2S frame sync pin
 
 .wrap_target
     ; Pull 24-bit audio data from TX FIFO
@@ -16,7 +15,7 @@
     
     ; Wait for the sync signal to go high (new frame start)
     wait 1 GPIO, SYNC_PIN side 0b0  
-    wait 1 GPIO, I2S_SYNC side 0b0
+    wait 1 GPIO, 12 side 0b0
 
 bitloop:
     ; Shift out 1 bit while raising BCLK
