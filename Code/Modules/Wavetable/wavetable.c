@@ -12,7 +12,7 @@
 
 // Constants
 #define SAMPLE_RATE 40000
-#define WAVETABLE_SIZE 2048
+#define WAVETABLE_SIZE 21504
 #define MIDI_NOTE_BITS 7
 #define PITCH_BEND_BITS 17
 #define MAX_PITCH_BEND (1 << PITCH_BEND_BITS) - 1
@@ -26,11 +26,11 @@ static float phase = 0.0f;
 static float phaseIncrement = 0.0f;
 
 // Current MIDI note and pitch bend
-uint8_t current_midi_note = 117;
+uint8_t current_midi_note = 32;
 uint32_t current_pitch_bend = MAX_PITCH_BEND / 2;
 
 // Amplitude control
-float amplitude = 0.8f;
+float amplitude = 0.5f;
 
 // Ring buffer
 uint32_t ring_buffer[RING_BUFFER_SIZE];
@@ -71,13 +71,13 @@ void init_wavetable() {
 
 */
 
-Use a sine from -1.0 to +1.0
 void init_wavetable() {
     for (int i = 0; i < WAVETABLE_SIZE; i++) {
         float phase = (2.0f * M_PI * i) / (float)WAVETABLE_SIZE;
         wavetable[i] = sinf(phase);
     }
 }
+
 
 
 float midi_note_to_frequency(uint8_t midi_note) {
