@@ -10,6 +10,10 @@
     set pins, 1            ; Set WS_PIN HIGH
     wait 0 GPIO, SYNC_PIN  ; Wait for sync signal to go low
     wait 1 GPIO, SYNC_PIN  ; Wait for sync signal to go high
+    wait 0 GPIO, SYNC_PIN  ; Wait for sync signal to go low
+    wait 1 GPIO, SYNC_PIN  ; Wait for sync signal to go high
     set pins, 0            ; Set WS_PIN LOW
+    wait 0 GPIO, SYNC_PIN  ; Wait for sync signal to go low
+    wait 1 GPIO, SYNC_PIN  ; Wait for sync signal to go high
     wait 0 GPIO, SYNC_PIN  ; Wait for sync signal to go low
 .wrap
