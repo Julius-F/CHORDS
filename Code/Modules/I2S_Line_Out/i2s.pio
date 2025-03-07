@@ -15,6 +15,7 @@
     
     ; Wait for the sync signal to go high (new frame start)
     wait 1 GPIO, SYNC_PIN side 0b0  
+    wait 1 GPIO, 12 side 0b0
 
 bitloop:
     ; Shift out 1 bit while raising BCLK
