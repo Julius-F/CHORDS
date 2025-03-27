@@ -1,32 +1,27 @@
 ;clock.pio
 .program clock
-; GPIO 0: Clock signal
-; GPIO 1: Sync signal
+; Wait for RUN LED (GPIO16) high to synchronize all SMs
+wait 1 pin 0  
 
-; Set GPIO 0 and GPIO 1 as outputs
+; Set pins as outputs (2 pins: clock and sync)
 set pindirs, 0b11
 
-; Initialize X as a counter for sync signal
-set x, 31  ; Count down from 31 to 0 (32 cycles)
+; Counter for sync signal
+set x, 31  
 
-; Main loop
 .wrap_target
-    ; Toggle clock signal (GPIO 0)
-    set pins, 1 [6]  ; Set clock high, delay 30 cycles
-    set pins, 0 [6]  ; Set clock low, delay 30 cycles
+    ; Clock high
+    set pins, 1 [6]
+    ; Clock low
+    set pins, 0 [6]
 
-    ; Decrement X counter and check if X == 0
-    jmp x-- nosync    ; If X != 0, skip sync signal
-
-    ; Sync signal (GPIO 1) high for 31 cycles (duration of one GPIO 0 clock cycle)
-    set pins, 0b10    ; Set sync high (GPIO 1), clock low (GPIO 0)
-    nop [5]          ; Delay for 29 cycles (total 30 cycles for sync)
-    set pins, 0b00    ; Set sync low (GPIO 1), clock low (GPIO 0)
-    nop [5]          ; Delay for 29 cycles (total 30 cycles for sync)
-
-    ; Reset X counter
-    set x, 31         ; Reset X to 31 for next sync cycle
-
+    ; Sync every 32 cycles
+    jmp x-- nosync
+    set pins, 0b10      ; sync high
+    nop [5]
+    set pins, 0b00      ; sync low
+    nop [5]
+    set x, 31
 nosync:
-    nop               ; Placeholder instruction
+    nop
 .wrap
