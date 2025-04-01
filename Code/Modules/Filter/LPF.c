@@ -1,10 +1,10 @@
 /*
- * File: filter.c
- * Author: CHORDS Group
- * Description: LP HP Blend Filter for CHORDS Module
+ * File: LPF.c
+ * Author: Bjorn Lavik 
+ * Description: DMSP filter with 6-knob support (using demux)
  *              Knob 1: Cutoff frequency
  *              Knob 2: Resonance/Q
- *              
+ *              Knobs 3-6: Unassigned (available for future use)
  */
 
  #include <stdio.h>
@@ -25,8 +25,8 @@
  #define DMSP_OUT_PIN      22       
  #define ADC_SEL           13  // GPIO for demux control
  
- #define BUFFER_SIZE         1024
- #define RING_BUFFER_SIZE    2048   
+ #define BUFFER_SIZE         2048  
+ #define RING_BUFFER_SIZE    4096
  
  // RX ring buffer for incoming frames
  uint32_t rx_ring_buffer[RING_BUFFER_SIZE];
@@ -203,10 +203,10 @@
     float morph_scale  = ((float)knob_morph) / 4096.0f;
 
     // Parameter ranges
-    const float min_cutoff = 20.0f;
-    const float max_cutoff = 20000.0f;
+    const float min_cutoff = 15.0f;
+    const float max_cutoff = 25000.0f;
     const float min_q      = 0.01f;
-    const float max_q      = 9.0f;
+    const float max_q      = 10.0f;
 
     // Compute target cutoff frequency and smooth it
     float cutoff_freq_target = min_cutoff + cutoff_scale * (max_cutoff - min_cutoff);
@@ -342,7 +342,7 @@
  
      // Start knob reading timer (100ms update rate)
      struct repeating_timer knob_timer;
-     add_repeating_timer_ms(10, knob_reading_callback, NULL, &knob_timer);
+     add_repeating_timer_ms(15, knob_reading_callback, NULL, &knob_timer);
  
      printf("System initialized. Starting main loop.\n");
  
