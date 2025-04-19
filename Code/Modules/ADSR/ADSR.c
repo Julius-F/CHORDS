@@ -18,11 +18,11 @@
 
 #define ADC_SEL             13      // Toggle for analog demux
 
-#define BUFFER_SIZE         128
-#define RING_BUFFER_SIZE    256
+#define BUFFER_SIZE         512
+#define RING_BUFFER_SIZE    1024
 
 #define AMPLITUDE_BUTTON    14      // Button for cycling amplitude of ADSR_OUT
-#define GATE_BUTTON         15      // Button for triggering ADSR
+#define TIME_BUTTON         15      // Button for triggering ADSR
 
 #define KNOB_ATTACK         0       // Knob 1 (index 0) - Attack Time
 #define KNOB_DECAY          1       // Knob 2 (index 1) - Decay Time
@@ -53,44 +53,35 @@ int vca_tx_dma_channel;
 int gate_rx_dma_channel;
 int vca_rx_dma_channel;
 
+// Add these global variables
+typedef enum {
+    AMP_FULL = 0,    // 24-bit full range (0-16777215)
+    AMP_HALF,        // 12-bit effective range (0-8388607.5)
+    AMP_QUARTER      // 6-bit effective range (0-4194303.75)
+} amplitude_mode_t;
+
+volatile amplitude_mode_t current_amp_mode = AMP_FULL;
+bool last_amplitude_button_state = true;
+uint32_t last_amplitude_button_time = 0;
+
+// Add these global variables
+typedef enum {
+    TIME_NORMAL = 0,
+    TIME_DOUBLE,
+    TIME_HALF
+} time_scale_t;
+
+volatile time_scale_t current_time_scale = TIME_NORMAL;
+bool last_time_button_state = true;
+uint32_t last_time_button_time = 0;
+
 // ADSR state arrays per channel
 bool gate_inputs[4] = {false, false, false, false}; // Gate DMSP Inputs (e.g. jacks)
-bool button_gate_active = false;                    // Global button gate state
 bool gate_states[4] = {false, false, false, false}; // Final effective gate states per channel
 
 // Button debouncing variables
 volatile uint32_t last_button_time = 0;
 const uint32_t button_debounce_ms = 100;
-
-// Gate polling function for ADSR (button affects all channels)
-void poll_gate_button() {
-    static bool last_button_state = true; // Assume pull-up, button not pressed
-    static uint32_t last_poll_time = 0;
-
-    uint32_t current_time = to_ms_since_boot(get_absolute_time());
-    if (current_time - last_poll_time < 10) return; // Poll every 10ms
-    last_poll_time = current_time;
-
-    bool current_button_state = gpio_get(GATE_BUTTON);
-
-    if (current_button_state != last_button_state) {
-        if (current_time - last_button_time > button_debounce_ms) {
-            last_button_time = current_time;
-            button_gate_active = !current_button_state; // Active low
-
-            // If button triggers global gate (for testing), explicitly mention:
-            // Otherwise, remove this loop entirely.
-            /*
-            for (int ch = 0; ch < 4; ch++) {
-                gate_states[ch] = gate_inputs[ch] || button_gate_active;
-            }
-            */
-        }
-    }
-
-    last_button_state = current_button_state;
-}
-
 
  // Global knob values (updated by knob_reading_callback)
  volatile float current_knob_values[6] = {0.0f};
@@ -140,6 +131,30 @@ void poll_gate_button() {
     }
 
     return true;
+}
+
+void poll_buttons() {
+    uint32_t current_time = to_ms_since_boot(get_absolute_time());
+    
+    // Amplitude mode button (cycles through modes)
+    bool amp_button_state = gpio_get(AMPLITUDE_BUTTON);
+    if (!amp_button_state && last_amplitude_button_state && 
+        (current_time - last_amplitude_button_time > button_debounce_ms)) {
+        last_amplitude_button_time = current_time;
+        current_amp_mode = (current_amp_mode + 1) % 3;
+        printf("Amplitude mode: %d\n", current_amp_mode);
+    }
+    last_amplitude_button_state = amp_button_state;
+
+    // Time scale button (cycles through scales)
+    bool time_button_state = gpio_get(TIME_BUTTON);
+    if (!time_button_state && last_time_button_state && 
+        (current_time - last_time_button_time > button_debounce_ms)) {
+        last_time_button_time = current_time;
+        current_time_scale = (current_time_scale + 1) % 3;
+        printf("Time scale: %d\n", current_time_scale);
+    }
+    last_time_button_state = time_button_state;
 }
 
 // --------------------- DMSP PIO Initialization ---------------------
@@ -350,7 +365,6 @@ void process_adsr_frames() {
 
         // Detect rising edge - new note on same channel
         if (gate_active && !was_gate_active[channel]) {
-            // Re-trigger the ADSR
             adsr_phase[channel] = ATTACK;
             adsr_level[channel] = 0.0f;
         }
@@ -360,7 +374,7 @@ void process_adsr_frames() {
         float attack_rate = 1.0f / (powf(current_knob_values[KNOB_ATTACK], 2) * 48000.0f + 1);
         float decay_rate = (1.0f - current_knob_values[KNOB_SUSTAIN]) / (current_knob_values[KNOB_DECAY] * 48000.0f + 1);
         float sustain_level = current_knob_values[KNOB_SUSTAIN];
-        float release_rate = sustain_level / (current_knob_values[KNOB_RELEASE] * 48000.0f + 1);
+        float release_rate = adsr_level[channel] / (current_knob_values[KNOB_RELEASE] * 48000.0f + 1);  // Fixed logic
 
         // ADSR state machine
         switch (adsr_phase[channel]) {
@@ -405,25 +419,34 @@ void process_adsr_frames() {
                     adsr_level[channel] = 0.0f;
                     adsr_phase[channel] = IDLE;
                 }
-                if (gate_active) {  // New note during release
+                if (gate_active) {
                     adsr_phase[channel] = ATTACK;
                 }
                 break;
         }
 
-        // Apply envelope
+        // Apply envelope to audio
         float processed_audio = adsr_level[channel] * (float)audio_data;
         processed_audio = fmaxf(MIN_VAL, fminf(MAX_VAL, processed_audio));
         
         uint32_t vca_out_frame = (header << 24) | ((uint32_t)(int32_t)processed_audio & 0xFFFFFF);
-        
         uint32_t next_vca_tx_head = (vca_tx_ring_buffer_head + 1) % RING_BUFFER_SIZE;
         if (next_vca_tx_head != vca_tx_ring_buffer_tail) {
             vca_tx_ring_buffer[vca_tx_ring_buffer_head] = vca_out_frame;
             vca_tx_ring_buffer_head = next_vca_tx_head;
         }
+
+        // Send ADSR envelope as digital control voltage
+        uint32_t adsr_value_24bit = (uint32_t)(adsr_level[channel] * 16777215.0f); // 0 to 2^24 - 1
+        uint32_t adsr_out_frame = (header << 24) | (adsr_value_24bit & 0xFFFFFF);
+        uint32_t next_adsr_tx_head = (adsr_tx_ring_buffer_head + 1) % RING_BUFFER_SIZE;
+        if (next_adsr_tx_head != adsr_tx_ring_buffer_tail) {
+            adsr_tx_ring_buffer[adsr_tx_ring_buffer_head] = adsr_out_frame;
+            adsr_tx_ring_buffer_head = next_adsr_tx_head;
+        }
     }
 }
+
 
 void process_gate_frames() {
     uint32_t local_gate_rx_head = gate_rx_ring_buffer_head;
@@ -463,9 +486,9 @@ int main()
     gpio_set_dir(ADC_SEL, GPIO_OUT);
 
     // Initialize buttons with internal pull-ups
-    gpio_init(GATE_BUTTON);
-    gpio_set_dir(GATE_BUTTON, GPIO_IN);
-    gpio_pull_up(GATE_BUTTON);
+    gpio_init(TIME_BUTTON);
+    gpio_set_dir(TIME_BUTTON, GPIO_IN);
+    gpio_pull_up(TIME_BUTTON);
 
     gpio_init(AMPLITUDE_BUTTON);
     gpio_set_dir(AMPLITUDE_BUTTON, GPIO_IN);
@@ -476,14 +499,14 @@ int main()
 
     // Set up repeating timer for knob reading (e.g., every 10 ms)
     struct repeating_timer knob_timer;
-    add_repeating_timer_ms(10, knob_reading_callback, NULL, &knob_timer);
+    add_repeating_timer_ms(15, knob_reading_callback, NULL, &knob_timer);
 
     printf("[INFO] Starting main loop...\n");
 
     // Main Loop
     while (true)
     {
-        poll_gate_button();     // Button state check
+        poll_buttons();     // Button state check
         process_gate_frames();  // <-- ADD THIS LINE
         process_adsr_frames();  // ADSR processing
         tight_loop_contents();
