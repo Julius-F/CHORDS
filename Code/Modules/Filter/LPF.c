@@ -2,9 +2,9 @@
  * File: LPF.c
  * Author: Bjorn Lavik 
  * Description: DMSP filter with 6-knob support (using demux)
- *              Knob 1: Cutoff frequency
- *              Knob 2: Resonance/Q
- *              Knobs 3-6: Unassigned (available for future use)
+ *              Knob 2: Cutoff frequency
+ *              Knob 4: Resonance/Q
+ *              Knob 6: LP/BP/HP
  */
 
  #include <stdio.h>
@@ -19,14 +19,30 @@
  #include "dmsp_transmit.pio.h"
  
  // Define GPIO pins (updated for new hardware)
- #define DMSP_IN_PIN       11        
+ #define DMSP_IN_PIN       3        
  #define GLOBAL_CLK_PIN    7     
  #define CHANNEL_CTRL_PIN  6   
  #define DMSP_OUT_PIN      22       
  #define ADC_SEL           13  // GPIO for demux control
+ #define CUTOFF_IN_PIN     10
  
- #define BUFFER_SIZE         2048  
- #define RING_BUFFER_SIZE    4096
+ #define BUFFER_SIZE         512 
+ #define RING_BUFFER_SIZE    1024
+
+
+ float cutoff_mod[4] = {0};  // modulation input values per channel
+
+
+ // Lookup tables shared across functions
+const int8_t header_to_channel[256] = {
+    [0x8F] = 0,
+    [0x9F] = 1,
+    [0xAF] = 2,
+    [0xBF] = 3,
+};
+
+const uint8_t channel_to_header[4] = { 0x8F, 0x9F, 0xAF, 0xBF };
+
  
  // RX ring buffer for incoming frames
  uint32_t rx_ring_buffer[RING_BUFFER_SIZE];
@@ -37,9 +53,15 @@
  uint32_t tx_ring_buffer[RING_BUFFER_SIZE];
  volatile uint32_t tx_ring_buffer_head = 0;
  volatile uint32_t tx_ring_buffer_tail = 0;
+
+ // RX ring buffer for incoming Cutoff Frequency Frames
+ uint32_t cutoff_rx_ring_buffer[RING_BUFFER_SIZE];
+ volatile uint32_t cutoff_rx_ring_buffer_head = 0;
+ volatile uint32_t cutoff_rx_ring_buffer_tail = 0;
  
  int rx_dma_channel;
  int tx_dma_channel;
+ int cutoff_dma_channel;
  
  // Global knob values (updated by knob_reading_callback)
  volatile uint16_t current_knob_values[6] = {0};
@@ -129,6 +151,24 @@
      pio_sm_set_enabled(pio, sm, true);
  }
  
+ void cutoff_receiver_init(PIO pio, uint sm, uint offset) {
+    pio_gpio_init(pio, CUTOFF_IN_PIN);
+    pio_gpio_init(pio, GLOBAL_CLK_PIN);
+    pio_gpio_init(pio, CHANNEL_CTRL_PIN);
+
+    pio_sm_set_consecutive_pindirs(pio, sm, CUTOFF_IN_PIN, 1, false);
+    pio_sm_set_consecutive_pindirs(pio, sm, GLOBAL_CLK_PIN, 1, false);
+    pio_sm_set_consecutive_pindirs(pio, sm, CHANNEL_CTRL_PIN, 1, false);
+
+    pio_sm_config c = dmsp_receive_program_get_default_config(offset);
+    sm_config_set_in_pins(&c, CUTOFF_IN_PIN);
+    sm_config_set_jmp_pin(&c, CHANNEL_CTRL_PIN);
+    sm_config_set_in_shift(&c, false, false, 32);
+
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
+}
+
  // --- DMA Functions (from working code) ---
  
  void rx_dma_handler() {
@@ -144,6 +184,14 @@
      dma_channel_set_read_addr(tx_dma_channel, &tx_ring_buffer[tx_ring_buffer_tail], true);
      dma_channel_set_trans_count(tx_dma_channel, BUFFER_SIZE, true);
  }
+
+ void cutoff_dma_handler() {
+    dma_hw->ints2 = 1u << cutoff_dma_channel;
+    cutoff_rx_ring_buffer_head = (cutoff_rx_ring_buffer_head + BUFFER_SIZE) % RING_BUFFER_SIZE;
+    dma_channel_set_write_addr(cutoff_dma_channel, &cutoff_rx_ring_buffer[cutoff_rx_ring_buffer_head], true);
+    dma_channel_set_trans_count(cutoff_dma_channel, BUFFER_SIZE, true);
+}
+
  
  void rx_dma_init(PIO pio, uint sm) {
      rx_dma_channel = dma_claim_unused_channel(true);
@@ -186,89 +234,90 @@
      irq_set_exclusive_handler(DMA_IRQ_1, tx_dma_handler);
      irq_set_enabled(DMA_IRQ_1, true);
  }
+
+ void cutoff_dma_init(PIO pio, uint sm) {
+    cutoff_dma_channel = dma_claim_unused_channel(true);
+    dma_channel_config c = dma_channel_get_default_config(cutoff_dma_channel);
+    channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
+    channel_config_set_read_increment(&c, false);
+    channel_config_set_write_increment(&c, true);
+    channel_config_set_dreq(&c, pio_get_dreq(pio, sm, false));
+
+    dma_channel_configure(
+        cutoff_dma_channel, &c,
+        cutoff_rx_ring_buffer,
+        &pio->rxf[sm],
+        BUFFER_SIZE,
+        true
+    );
+
+    dma_irqn_set_channel_enabled(2, cutoff_dma_channel, true);
+    irq_set_exclusive_handler(DMA_IRQ_2, cutoff_dma_handler);
+    irq_set_enabled(DMA_IRQ_2, true);
+}
+
  
  // --- Filter Processing (updated for knob control) ---
  
  void process_data() {
-    // --- Coefficient and Parameter Calculation ---
-
-    // Get knob values (atomic read)
-    uint16_t knob_cutoff = current_knob_values[1]; // Knob 1: Cutoff frequency
-    uint16_t knob_q      = current_knob_values[3]; // Knob 2: Resonance/Q
-    uint16_t knob_morph  = current_knob_values[5]; // Knob 5: Morph control (0: LP, 1: HP)
-
-    // Scale knob values (0.0 to 1.0)
-    float cutoff_scale = ((float)knob_cutoff) / 4096.0f;
-    float q_scale      = ((float)knob_q)     / 4096.0f;
-    float morph_scale  = ((float)knob_morph) / 4096.0f;
+    // Global knob reads
+    float knob_cutoff = ((float)current_knob_values[1]) / 4096.0f;
+    float knob_q      = ((float)current_knob_values[3]) / 4096.0f;
+    float morph_scale = ((float)current_knob_values[5]) / 4096.0f;
 
     // Parameter ranges
     const float min_cutoff = 15.0f;
-    const float max_cutoff = 25000.0f;
+    const float max_cutoff = 20000.0f;
     const float min_q      = 0.01f;
-    const float max_q      = 10.0f;
-
-    // Compute target cutoff frequency and smooth it
-    float cutoff_freq_target = min_cutoff + cutoff_scale * (max_cutoff - min_cutoff);
-    static float smoothed_cutoff = 20.0f;  // initialize to min_cutoff
-    const float smoothing_factor = 0.01f;  // Adjust this for smoother/faster response
-    smoothed_cutoff += smoothing_factor * (cutoff_freq_target - smoothed_cutoff);
-
-    float resonance = min_q + q_scale * (max_q - min_q);
+    const float max_q      = 15.0f;
     const float sampling_freq = 40000.0f;
+    const float smoothing_factor = 0.01f;
 
-    // Precompute trigonometric values
-    float omega = 2.0f * M_PI * smoothed_cutoff / sampling_freq;
-    float cos_omega = cosf(omega);
-    float sin_omega = sinf(omega);
-    float alpha = sin_omega / (2.0f * resonance);
-    float a0 = 1.0f + alpha;
-    float a1 = -2.0f * cos_omega;
-    float a2 = 1.0f - alpha;
-
-    // Compute low-pass coefficients (normalized)
-    float b0_lp = ((1.0f - cos_omega) / 2.0f) / a0;
-    float b1_lp = (1.0f - cos_omega)       / a0;
-    float b2_lp = b0_lp;  // same as b0_lp
-
-    // Compute high-pass coefficients (normalized)
-    float b0_hp = ((1.0f + cos_omega) / 2.0f) / a0;
-    float b1_hp = (-(1.0f + cos_omega))     / a0;
-    float b2_hp = b0_hp;  // same as b0_hp
-
-    // Interpolate coefficients based on morph control:
-    // morph_scale = 0.0 gives LP; = 1.0 gives HP.
-    float t = morph_scale;  // [0,1]
-    float b0 = (1.0f - t) * b0_lp + t * b0_hp;
-    float b1 = (1.0f - t) * b1_lp + t * b1_hp;
-    float b2 = (1.0f - t) * b2_lp + t * b2_hp;
-    float a1_norm = a1 / a0;
-    float a2_norm = a2 / a0;
-
-    // Define clipping limits for 24-bit data
     const float MAX_VAL = 8388607.0f;
     const float MIN_VAL = -8388608.0f;
 
-    // --- Lookup Tables for Fast Header Mapping ---
-    // Maps valid header values to channel indices; invalid entries are -1.
-    static const int8_t header_to_channel[256] = {
-        [0x8F] = 0,
-        [0x9F] = 1,
-        [0xAF] = 2,
-        [0xBF] = 3,
-    };
-    // Mapping from channel index back to header for output
-    static const uint8_t channel_to_header[4] = { 0x8F, 0x9F, 0xAF, 0xBF };
+    static float smoothed_cutoff[4] = {200.0f, 200.0f, 200.0f, 200.0f};
+    static float b0[4], b1[4], b2[4], a1_norm[4], a2_norm[4];
+    static float x1[4] = {0}, x2[4] = {0}, y1[4] = {0}, y2[4] = {0};
+    extern float cutoff_mod[4];  // must be defined globally
 
-    // --- Filter State (per channel) ---
-    // Keep these static so the state persists between calls.
-    static float x1[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    static float x2[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    static float y1[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    static float y2[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float resonance = min_q + knob_q * (max_q - min_q);
 
-    // --- Process Ring Buffer Frames ---
-    // Local copy of rx_ring_buffer_head to reduce repeated volatile access
+    // Recompute filter coefficients per channel
+    for (int ch = 0; ch < 4; ch++) {
+        float mod = cutoff_mod[ch];  // expected to be 0.0 to 1.0
+        float combined = knob_cutoff + mod;
+        if (combined > 1.0f) combined = 1.0f;
+
+        float target_cutoff = min_cutoff + combined * (max_cutoff - min_cutoff);
+        smoothed_cutoff[ch] += smoothing_factor * (target_cutoff - smoothed_cutoff[ch]);
+
+        float omega = 2.0f * M_PI * smoothed_cutoff[ch] / sampling_freq;
+        float cos_omega = cosf(omega);
+        float sin_omega = sinf(omega);
+        float alpha = sin_omega / (2.0f * resonance);
+
+        float a0 = 1.0f + alpha;
+        float a1 = -2.0f * cos_omega;
+        float a2 = 1.0f - alpha;
+
+        float b0_lp = ((1.0f - cos_omega) / 2.0f) / a0;
+        float b1_lp = (1.0f - cos_omega) / a0;
+        float b2_lp = b0_lp;
+
+        float b0_hp = ((1.0f + cos_omega) / 2.0f) / a0;
+        float b1_hp = (-(1.0f + cos_omega)) / a0;
+        float b2_hp = b0_hp;
+
+        float t = morph_scale;
+        b0[ch] = (1.0f - t) * b0_lp + t * b0_hp;
+        b1[ch] = (1.0f - t) * b1_lp + t * b1_hp;
+        b2[ch] = (1.0f - t) * b2_lp + t * b2_hp;
+        a1_norm[ch] = a1 / a0;
+        a2_norm[ch] = a2 / a0;
+    }
+
+    // Process all incoming frames
     uint32_t local_rx_head = rx_ring_buffer_head;
     while (rx_ring_buffer_tail != local_rx_head) {
         uint32_t frame = rx_ring_buffer[rx_ring_buffer_tail];
@@ -276,80 +325,111 @@
 
         uint8_t header = frame >> 24;
         int channel = header_to_channel[header];
-        if (channel < 0)
-            continue;  // Skip invalid header
+        if (channel < 0) continue;
 
-        uint32_t raw_data = frame & 0xFFFFFF;
-        // Sign-extend 24-bit to 32-bit
-        int32_t audio_data = raw_data;
-        if (raw_data & 0x800000)
-            audio_data |= 0xFF000000;
+        uint32_t raw = frame & 0xFFFFFF;
+        int32_t input = raw;
+        if (raw & 0x800000) input |= 0xFF000000;
 
-        // Filter the sample
-        float input = (float)audio_data;
-        float output = b0 * input + b1 * x1[channel] + b2 * x2[channel]
-                     - a1_norm * y1[channel] - a2_norm * y2[channel];
+        float out = b0[channel] * input + b1[channel] * x1[channel] + b2[channel] * x2[channel]
+                  - a1_norm[channel] * y1[channel] - a2_norm[channel] * y2[channel];
 
-        // Clip output (using branchless-style min/max functions or inline if preferred)
-        if (output > MAX_VAL)
-            output = MAX_VAL;
-        else if (output < MIN_VAL)
-            output = MIN_VAL;
+        if (out > MAX_VAL) out = MAX_VAL;
+        else if (out < MIN_VAL) out = MIN_VAL;
 
-        // Update filter state for the channel
         x2[channel] = x1[channel];
         x1[channel] = input;
         y2[channel] = y1[channel];
-        y1[channel] = output;
+        y1[channel] = out;
 
-        int32_t filtered_data = (int32_t)output;  // Already clipped
-        uint8_t out_header = channel_to_header[channel];
-        uint32_t processed_frame = ((uint32_t)out_header << 24) | ((uint32_t)filtered_data & 0xFFFFFF);
-
-        // Queue the processed frame for output if there's space
+        uint32_t out_frame = ((uint32_t)channel_to_header[channel] << 24) | ((int32_t)out & 0xFFFFFF);
         if (((tx_ring_buffer_head + 1) % RING_BUFFER_SIZE) != tx_ring_buffer_tail) {
-            tx_ring_buffer[tx_ring_buffer_head] = processed_frame;
+            tx_ring_buffer[tx_ring_buffer_head] = out_frame;
             tx_ring_buffer_head = (tx_ring_buffer_head + 1) % RING_BUFFER_SIZE;
         }
     }
 }
+
+
+void process_cutoff_mod() {
+    uint32_t local_cutoff_head = cutoff_rx_ring_buffer_head;
+
+    while (cutoff_rx_ring_buffer_tail != local_cutoff_head) {
+        uint32_t frame = cutoff_rx_ring_buffer[cutoff_rx_ring_buffer_tail];
+        cutoff_rx_ring_buffer_tail = (cutoff_rx_ring_buffer_tail + 1) % RING_BUFFER_SIZE;
+
+        uint8_t header = frame >> 24;
+
+        // Check format: must be 1cccF
+        if ((header & 0x0F) != 0x0F) continue;
+
+        int channel = (header >> 4) & 0x07;
+        if (channel >= 4) continue;  // Only channels 0-3 supported in this module
+
+        uint32_t raw = frame & 0xFFFFFF;
+
+        // ✅ Treat as unsigned 24-bit (0 to 16777215) mapped to 0.0 – 1.0
+        float mod = (float)raw / 16777215.0f;
+
+        // Clamp just in case
+        if (mod < 0.0f) mod = 0.0f;
+        if (mod > 1.0f) mod = 1.0f;
+
+        cutoff_mod[channel] = mod;
+
+        // Optional debug
+        // printf("Cutoff mod CH%d = %.3f\n", channel, mod);
+    }
+}
+
+
+
  
- int main() {
-     sleep_ms(1000);  // Allow time for serial connection
-     stdio_init_all();
- 
-     // Initialize ADC for knob reading
-     adc_init();
-     adc_gpio_init(26);  // ADC0
-     adc_gpio_init(27);  // ADC1
-     adc_gpio_init(28);  // ADC2
-     adc_select_input(0);
- 
-     // Initialize demux control pin
-     gpio_init(ADC_SEL);
-     gpio_set_dir(ADC_SEL, GPIO_OUT);
- 
-     // Initialize PIO and DMA
-     PIO pio = pio0;
-     uint rx_sm = 0, tx_sm = 1;
-     uint rx_offset = pio_add_program(pio, &dmsp_receive_program);
-     uint tx_offset = pio_add_program(pio, &dmsp_transmit_program);
- 
-     dmsp_receiver_init(pio, rx_sm, rx_offset);
-     dmsp_transmitter_init(pio, tx_sm, tx_offset);
-     rx_dma_init(pio, rx_sm);
-     tx_dma_init(pio, tx_sm);
- 
-     // Start knob reading timer (100ms update rate)
-     struct repeating_timer knob_timer;
-     add_repeating_timer_ms(15, knob_reading_callback, NULL, &knob_timer);
- 
-     printf("System initialized. Starting main loop.\n");
- 
-     while (true) {
-         process_data();
-         //sleep_us(1);
-     }
- 
-     return 0;
- }
+int main() {
+    sleep_ms(1000);  // Allow time for serial connection
+    stdio_init_all();
+
+    // Initialize ADC for knob reading
+    adc_init();
+    adc_gpio_init(26);  // ADC0
+    adc_gpio_init(27);  // ADC1
+    adc_gpio_init(28);  // ADC2
+    adc_select_input(0);
+
+    // Initialize demux control pin
+    gpio_init(ADC_SEL);
+    gpio_set_dir(ADC_SEL, GPIO_OUT);
+
+    // Initialize PIO and DMA
+    PIO pio = pio0;
+    uint rx_sm = 0, tx_sm = 1, cutoff_sm = 2;
+    
+    // Load programs and initialize state machines
+    uint rx_offset = pio_add_program(pio, &dmsp_receive_program);
+    uint tx_offset = pio_add_program(pio, &dmsp_transmit_program);
+    
+    dmsp_receiver_init(pio, rx_sm, rx_offset);
+    dmsp_transmitter_init(pio, tx_sm, tx_offset);
+    
+    // Initialize cutoff receiver on separate state machine
+    cutoff_receiver_init(pio, cutoff_sm, rx_offset);  // Using same receive program
+    cutoff_dma_init(pio, cutoff_sm);
+
+    // Initialize main audio DMAs
+    rx_dma_init(pio, rx_sm);
+    tx_dma_init(pio, tx_sm);
+
+    // Start knob reading timer (15ms update rate)
+    struct repeating_timer knob_timer;
+    add_repeating_timer_ms(15, knob_reading_callback, NULL, &knob_timer);
+
+    printf("System initialized. Starting main loop.\n");
+
+    while (true) {
+        process_cutoff_mod();  // must be called before process_data
+        process_data();
+        tight_loop_contents();
+    }
+    
+    return 0;
+}
