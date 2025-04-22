@@ -1,0 +1,34 @@
+.program dmsp_receive
+
+; Define GPIO pins
+.define GLOBAL_CLK_PIN 7  ; GPIO 7 as global clock input
+.define CHANNEL_CTRL_PIN 6 ; GPIO 6 as sync signal input
+
+; Main loop
+.wrap_target
+    ; Wait for sync signal to go high (start of a new frame)
+    wait 1 GPIO, CHANNEL_CTRL_PIN  ; Wait for GPIO 15 (sync) to go high
+
+    ; Wait for sync signal to go low
+    wait 0 GPIO, CHANNEL_CTRL_PIN  ; Wait for GPIO 15 (sync) to go low
+    
+    ; Initialize loop counter (32 bits)
+    set x, 31
+
+bitloop:
+    ; Wait for the falling edge of the global clock
+    
+    wait 1 GPIO, GLOBAL_CLK_PIN ; Wait for GPIO 14 (global clock) to go high
+
+    wait 0 GPIO, GLOBAL_CLK_PIN ; Wait for GPIO 14 (global clock) to go low
+
+    ; Read 1 bit from GPIO 16
+    in pins, 1                  ; Shift in 1 bit from GPIO 16
+
+    ; Decrement x and loop until all 32 bits are received
+    jmp x-- bitloop             ; Decrement x and loop until all 32 bits are received
+
+    ; Push the received data to the RX FIFO
+    push                        ; Push the received data to the RX FIFO
+    
+.wrap
