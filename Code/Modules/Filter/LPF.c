@@ -29,6 +29,13 @@
  #define BUFFER_SIZE         512 
  #define RING_BUFFER_SIZE    1024
 
+ #define CUTOFF_INVERT_BUTTON    14      // Button for to toggle "Cutoff In" to inverting/non-inverting mode
+
+ bool cutoff_invert_mode = false;  // Default is non-inverting mode
+
+ bool last_cutoff_invert_button_state = true;
+ uint32_t last_cutoff_invert_button_time = 0;
+ const uint32_t button_debounce_ms = 100;
 
  float cutoff_mod[4] = {0};  // modulation input values per channel
 
@@ -111,6 +118,21 @@ const uint8_t channel_to_header[4] = { 0x8F, 0x9F, 0xAF, 0xBF };
  
      return true;
  }
+
+ void poll_buttons() {
+    uint32_t current_time = to_ms_since_boot(get_absolute_time());
+
+    // Cutoff Invert Button (toggles between inverting/non-inverting mode)
+    bool invert_button_state = gpio_get(CUTOFF_INVERT_BUTTON);
+    if (!invert_button_state && last_cutoff_invert_button_state &&
+        (current_time - last_cutoff_invert_button_time > button_debounce_ms)) {
+        last_cutoff_invert_button_time = current_time;
+        cutoff_invert_mode = !cutoff_invert_mode;  // Toggle mode
+        printf("Cutoff Invert Mode: %s\n", cutoff_invert_mode ? "Inverting" : "Non-Inverting");
+    }
+    last_cutoff_invert_button_state = invert_button_state;
+}
+
  
  // --- DMSP Initialization (from working code) ---
  
@@ -375,12 +397,18 @@ void process_cutoff_mod() {
         if (mod < 0.0f) mod = 0.0f;
         if (mod > 1.0f) mod = 1.0f;
 
+        // Apply inversion if inverting mode
+        if (cutoff_invert_mode) {
+            mod = 1.0f - mod;  // Invert the modulation value
+        }
+
         cutoff_mod[channel] = mod;
 
         // Optional debug
         // printf("Cutoff mod CH%d = %.3f\n", channel, mod);
     }
 }
+
 
 
 
@@ -395,6 +423,10 @@ int main() {
     adc_gpio_init(27);  // ADC1
     adc_gpio_init(28);  // ADC2
     adc_select_input(0);
+
+    gpio_init(CUTOFF_INVERT_BUTTON);
+    gpio_set_dir(CUTOFF_INVERT_BUTTON, GPIO_IN);
+    gpio_pull_up(CUTOFF_INVERT_BUTTON);
 
     // Initialize demux control pin
     gpio_init(ADC_SEL);
@@ -426,6 +458,7 @@ int main() {
     printf("System initialized. Starting main loop.\n");
 
     while (true) {
+        poll_buttons();     // Button state check
         process_cutoff_mod();  // must be called before process_data
         process_data();
         tight_loop_contents();
