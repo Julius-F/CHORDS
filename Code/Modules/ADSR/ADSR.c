@@ -1,3 +1,8 @@
+/*
+ * File: ADSR.c
+ * Author: Bjorn Lavik 
+ * Description: ADSR envelope generator with built in VCA, Buttons for setting ADSR output level
+ */
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/dma.h"
@@ -21,7 +26,7 @@
 #define BUFFER_SIZE         512
 #define RING_BUFFER_SIZE    1024
 
-#define AMPLITUDE_BUTTON    14      // Button for cycling amplitude of ADSR_OUT
+#define AMPLITUDE_BUTTON    14      // Button for cycling amplitude of ADSR_OUT, Button 1
 #define TIME_BUTTON         15      // Button for triggering ADSR
 
 #define KNOB_ATTACK         0       // Knob 1 (index 0) - Attack Time
@@ -53,35 +58,16 @@ int vca_tx_dma_channel;
 int gate_rx_dma_channel;
 int vca_rx_dma_channel;
 
-// Add these global variables
-typedef enum {
-    AMP_FULL = 0,    // 24-bit full range (0-16777215)
-    AMP_HALF,        // 12-bit effective range (0-8388607.5)
-    AMP_QUARTER      // 6-bit effective range (0-4194303.75)
-} amplitude_mode_t;
-
-volatile amplitude_mode_t current_amp_mode = AMP_FULL;
+// Amplitude button variables
+volatile int amplitude_divisors[] = {1, 2, 6, 16, 32};
+volatile int current_amp_index = 0;
 bool last_amplitude_button_state = true;
 uint32_t last_amplitude_button_time = 0;
-
-// Add these global variables
-typedef enum {
-    TIME_NORMAL = 0,
-    TIME_DOUBLE,
-    TIME_HALF
-} time_scale_t;
-
-volatile time_scale_t current_time_scale = TIME_NORMAL;
-bool last_time_button_state = true;
-uint32_t last_time_button_time = 0;
+const uint32_t button_debounce_ms = 100;
 
 // ADSR state arrays per channel
 bool gate_inputs[4] = {false, false, false, false}; // Gate DMSP Inputs (e.g. jacks)
 bool gate_states[4] = {false, false, false, false}; // Final effective gate states per channel
-
-// Button debouncing variables
-volatile uint32_t last_button_time = 0;
-const uint32_t button_debounce_ms = 100;
 
  // Global knob values (updated by knob_reading_callback)
  volatile float current_knob_values[6] = {0.0f};
@@ -133,28 +119,19 @@ const uint32_t button_debounce_ms = 100;
     return true;
 }
 
+// Update your poll_buttons() function as follows:
 void poll_buttons() {
     uint32_t current_time = to_ms_since_boot(get_absolute_time());
-    
-    // Amplitude mode button (cycles through modes)
+
+    // Amplitude mode button (cycles through divisors)
     bool amp_button_state = gpio_get(AMPLITUDE_BUTTON);
     if (!amp_button_state && last_amplitude_button_state && 
         (current_time - last_amplitude_button_time > button_debounce_ms)) {
         last_amplitude_button_time = current_time;
-        current_amp_mode = (current_amp_mode + 1) % 3;
-        printf("Amplitude mode: %d\n", current_amp_mode);
+        current_amp_index = (current_amp_index + 1) % 5; // Cycle through 0-4 (divisors 1,2,4,8,16)
+        printf("Amplitude divisor: %d\n", amplitude_divisors[current_amp_index]);
     }
     last_amplitude_button_state = amp_button_state;
-
-    // Time scale button (cycles through scales)
-    bool time_button_state = gpio_get(TIME_BUTTON);
-    if (!time_button_state && last_time_button_state && 
-        (current_time - last_time_button_time > button_debounce_ms)) {
-        last_time_button_time = current_time;
-        current_time_scale = (current_time_scale + 1) % 3;
-        printf("Time scale: %d\n", current_time_scale);
-    }
-    last_time_button_state = time_button_state;
 }
 
 // --------------------- DMSP PIO Initialization ---------------------
@@ -437,7 +414,7 @@ void process_adsr_frames() {
         }
 
         // Send ADSR envelope as digital control voltage
-        uint32_t adsr_value_24bit = (uint32_t)(adsr_level[channel] * 16777215.0f); // 0 to 2^24 - 1
+        uint32_t adsr_value_24bit = (uint32_t)((adsr_level[channel] * 16777215.0f) / amplitude_divisors[current_amp_index]);
         uint32_t adsr_out_frame = (header << 24) | (adsr_value_24bit & 0xFFFFFF);
         uint32_t next_adsr_tx_head = (adsr_tx_ring_buffer_head + 1) % RING_BUFFER_SIZE;
         if (next_adsr_tx_head != adsr_tx_ring_buffer_tail) {
@@ -507,7 +484,7 @@ int main()
     while (true)
     {
         poll_buttons();     // Button state check
-        process_gate_frames();  // <-- ADD THIS LINE
+        process_gate_frames();
         process_adsr_frames();  // ADSR processing
         tight_loop_contents();
     }
