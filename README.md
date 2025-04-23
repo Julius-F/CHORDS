@@ -1,2 +1,2 @@
 # CHORDS
-Cost-effective Hardware Oriented Real-time Digital Synthesizer. SSU M2024-25 Senior project repository.
+Customizable Hardware-based Open-source Real-time Digital Synthesizer. SSU 2024-2025 Senior project repository.
