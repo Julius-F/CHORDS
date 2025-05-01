@@ -15,9 +15,9 @@ if(WIN32)
 else()
     set(USERHOME $ENV{HOME})
 endif()
-set(sdkVersion 2.1.0)
+set(sdkVersion 2.1.1)
 set(toolchainVersion 13_3_Rel1)
-set(picotoolVersion 2.1.0)
+set(picotoolVersion 2.1.1)
 set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
 if (EXISTS ${picoVscode})
     include(${picoVscode})
@@ -28,41 +28,40 @@ set(PICO_BOARD pico2 CACHE STRING "Board type")
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(vca C CXX ASM)
+project(LPF C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(vca vca.c )
+add_executable(LPF LPF.c )
 
-pico_set_program_name(vca "vca")
-pico_set_program_version(vca "0.1")
+pico_set_program_name(LPF "LPF")
+pico_set_program_version(LPF "0.1")
 
 # Generate PIO header
-pico_generate_pio_header(vca ${CMAKE_CURRENT_LIST_DIR}/dmsp_transmit.pio)
-pico_generate_pio_header(vca ${CMAKE_CURRENT_LIST_DIR}/dmsp_receive.pio)
+pico_generate_pio_header(LPF ${CMAKE_CURRENT_LIST_DIR}/dmsp_transmit.pio)
+pico_generate_pio_header(LPF ${CMAKE_CURRENT_LIST_DIR}/dmsp_receive.pio)
 
 # Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(vca 0)
-pico_enable_stdio_usb(vca 1)
+pico_enable_stdio_uart(LPF 0)
+pico_enable_stdio_usb(LPF 1)
 
 # Add the standard library to the build
-target_link_libraries(vca
+target_link_libraries(LPF
         pico_stdlib)
 
 # Add the standard include files to the build
-target_include_directories(vca PRIVATE
+target_include_directories(LPF PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
 )
 
 # Add any user requested libraries
-target_link_libraries(vca 
+target_link_libraries(LPF 
         hardware_dma
         hardware_pio
         hardware_adc
         )
 
-pico_add_extra_outputs(vca)
-
+pico_add_extra_outputs(LPF)
